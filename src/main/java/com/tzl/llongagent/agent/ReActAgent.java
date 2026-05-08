@@ -1,6 +1,5 @@
-package com.tzl.llongagent.agent.model;
+package com.tzl.llongagent.agent;
 
-import com.tzl.llongagent.agent.BaseAgent;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.extern.slf4j.Slf4j;

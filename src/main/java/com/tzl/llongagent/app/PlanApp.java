@@ -136,7 +136,7 @@ public class PlanApp {
 
         ChatResponse chatResponse = deepseekChatClient.prompt()
                 .user(userMessage)
-                .tools(allTools)
+                .toolCallbacks(allTools)
                 .advisors(
                         spec -> spec.param(ChatMemory.CONVERSATION_ID, conversationId)
                 )

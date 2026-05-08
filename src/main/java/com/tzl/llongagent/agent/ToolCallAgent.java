@@ -1,18 +1,21 @@
 package com.tzl.llongagent.agent;
 
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
-import com.tzl.llongagent.agent.model.ReActAgent;
+import com.tzl.llongagent.agent.model.AgentState;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.model.tool.ToolCallingManager;
+import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.tool.ToolCallback;
 
 import java.util.List;
@@ -79,6 +82,7 @@ public class ToolCallAgent extends ReActAgent {
                     .chatResponse();
 
             // 助手工具
+            assert chatResponse != null;
             AssistantMessage assistantMessage = chatResponse.getResult().getOutput();
 
             // 获取要调用的工具
@@ -86,8 +90,8 @@ public class ToolCallAgent extends ReActAgent {
 
             // 输出提示消息
             String result = assistantMessage.getText();
-            log.info(getName() + "的思考: " + result);
-            log.info(getName() + "选择了: " + toolCalls.size() + "个工具来使用");
+            log.info("{}的思考: {}", getName(), result);
+            log.info("{}选择了: {}个工具来使用", getName(), toolCalls.size());
 
             // 格式化工具的调用信息
             String toolCallInfo = toolCalls.stream()
@@ -127,6 +131,39 @@ public class ToolCallAgent extends ReActAgent {
      */
     @Override
     public String act() {
-        return "";
+
+        if(!toolCallChatResponse.hasToolCalls())
+            return "不需要调用工具";
+
+        // 在 UserMessage和ChatClient中间的一层,Prompt = 上下文加 ChatOptions
+        Prompt prompt = new Prompt(getMessageList(), chatOptions);
+
+        // 调用工具
+        ToolExecutionResult toolExecutionResult = toolCallingManager.executeToolCalls(prompt, toolCallChatResponse);
+
+        // 记录消息上下文
+        // 记录消息上下文，conversationHistory 已经包含了助手消息和工具调用返回的结果
+        setMessageList(toolExecutionResult.conversationHistory());
+        ToolResponseMessage toolResponseMessage = (ToolResponseMessage) CollUtil.getLast(toolExecutionResult.conversationHistory());
+
+        // 判断是否调用了终止工具
+        boolean terminateToolCalled = toolResponseMessage.getResponses().stream()
+                .anyMatch(response -> response.name().equals("doTerminate"));
+
+        // 如果调用了终止工具，那么必须修改本 Agent 的状态
+        if(terminateToolCalled)
+            setState(AgentState.FINISHED);
+
+        // 从工具调用结束后的信息中，格式化数据
+        String results = toolResponseMessage.getResponses().stream()
+                .map(response -> "工具 " + response.name() + " 返回的结果：" + response.responseData())
+                .collect(Collectors.joining("\n"));
+
+        // 打印格式化的数据
+        log.info(results);
+
+        // 返回格式化的数据
+        return results;
+
     }
 }
